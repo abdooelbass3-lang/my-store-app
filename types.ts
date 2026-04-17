@@ -479,6 +479,7 @@ export interface Order {
   auditLogs?: AuditLog[];
   callAttempts?: CallAttempt[];
   sentiment?: string;
+  source?: 'synced' | 'manual';
 }
 
 export interface StoreData {

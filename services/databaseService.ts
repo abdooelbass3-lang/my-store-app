@@ -352,10 +352,12 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
-            const { data: dbItems, error: fetchError } = await supabase
+            let query = supabase
                 .from(tableName)
-                .select(dbIdColumn)
+                .select(`${dbIdColumn}${tableName === 'orders' ? ', details' : ''}`)
                 .eq('store_id', store.id);
+            
+            const { data: dbItems, error: fetchError } = await query;
 
             if (fetchError) {
                 console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
@@ -365,7 +367,22 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const dbIds = new Set(dbItems.map((item: any) => item[dbIdColumn]));
             const stateIds = new Set(stateItems.map(item => item[stateIdColumn]));
             
-            const idsToDelete = [...dbIds].filter(id => !stateIds.has(id));
+            // If it's the orders table, filter out synced ones that are NOT in state
+            const idsToDelete = [...dbItems]
+                .filter((item: any) => {
+                    if (tableName === 'orders') {
+                        const details = item.details || {};
+                        // Check if it's a synced order (based on metadata if present)
+                        const isSynced = details.source === 'synced';
+                        if (isSynced && !stateIds.has(item[dbIdColumn])) {
+                             // This is a synced order that is NOT in the current app state.
+                             // We should NOT delete it automatically to prevent flickering.
+                             return false; 
+                        }
+                    }
+                    return !stateIds.has(item[dbIdColumn]);
+                })
+                .map((item: any) => item[dbIdColumn]);
 
             if (idsToDelete.length > 0) {
                 const { error: deleteError } = await supabase
@@ -376,7 +393,6 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
 
                 if (deleteError) {
                     console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
-                    // Don't throw
                 }
             }
         };
