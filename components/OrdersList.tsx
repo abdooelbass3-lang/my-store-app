@@ -676,13 +676,24 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             transactions.push({ id: `post_return_fee_${order.id}`, type: 'سحب', amount: returnShippingFee, date: new Date().toISOString(), note: `مصاريف شحن مرتجع بعد الاستلام للطلب #${order.orderNumber}`, category: 'return' });
         }
 
-        if (!window.confirm(confirmationMessage)) return;
-
-        if (transactions.length > 0) {
-            setWallet(prev => ({ ...prev, transactions: [...transactions, ...prev.transactions] }));
-        }
-        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'مرتجع_بعد_الاستلام' } : o));
+    const confirmCollectionReturn = () => {
+        confirmAction({
+            title: 'إرجاع بعد الاستلام',
+            message: confirmationMessage,
+            type: 'warning',
+            confirmText: 'تأكيد الإرجاع',
+            onConfirm: () => {
+                if (transactions.length > 0) {
+                    setWallet(prev => ({ ...prev, transactions: [...transactions, ...prev.transactions] }));
+                }
+                setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'مرتجع_بعد_الاستلام' } : o));
+                setConfirmation(prev => ({ ...prev, isOpen: false }));
+            }
+        });
     };
+
+    confirmCollectionReturn();
+  };
 
     const handleStartExchange = (originalOrder: Order) => {
         const creditAmount = originalOrder.totalAmountOverride ?? (originalOrder.productPrice + originalOrder.shippingFee - (originalOrder.discount || 0));
@@ -734,14 +745,42 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       }
   };
 
+
   const handleSelectRow = (id: string) => {
       setSelectedOrders(prev => prev.includes(id) ? prev.filter(oId => oId !== id) : [...prev, id]);
   };
   
+  const [confirmation, setConfirmation] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: 'danger' | 'warning' | 'info';
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'info'
+  });
+
+  const confirmAction = (config: Omit<typeof confirmation, 'isOpen'>) => {
+    setConfirmation({ ...config, isOpen: true });
+  };
+
   const handleBulkDelete = () => {
-    setOrders(prevOrders => prevOrders.filter(o => !selectedOrders.includes(o.id)));
-    setSelectedOrders([]);
-    setShowBulkDeleteConfirm(false);
+    confirmAction({
+        title: 'حذف حماعي',
+        message: `هل أنت متأكد من حذف ${selectedOrders.length} طلبات نهائياً؟`,
+        type: 'danger',
+        confirmText: 'حذف',
+        onConfirm: () => {
+            setOrders(prevOrders => prevOrders.filter(o => !selectedOrders.includes(o.id)));
+            setSelectedOrders([]);
+            setConfirmation(prev => ({ ...prev, isOpen: false }));
+        }
+    });
   };
 
   const handleBulkStatusChange = (newStatus: string) => {
@@ -751,22 +790,70 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         return;
     }
     
-    if (!window.confirm(`هل أنت متأكد من تغيير حالة ${selectedOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"?`)) {
-      if(selectElement) selectElement.value = 'default';
-      return;
-    }
-    
-    setOrders(prevOrders => prevOrders.map(o => {
-        if (selectedOrders.includes(o.id)) {
-            const updated = processFinancialsForStatusChange(o, newStatus as OrderStatus);
-            return { ...updated, status: newStatus as OrderStatus };
-        }
-        return o;
-    }));
+    confirmAction({
+        title: 'تغيير الحالة جماعياً',
+        message: `هل أنت متأكد من تغيير حالة ${selectedOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"?`,
+        type: 'warning',
+        confirmText: 'تأكيد التغيير',
+        onConfirm: () => {
+            const allNewTransactions: Transaction[] = [];
+            const updatedOrders = orders.map(o => {
+                if (selectedOrders.includes(o.id)) {
+                    // Create a copy to avoid side effects during financial processing
+                    let orderToUpdate = { ...o, status: newStatus as OrderStatus };
+                    
+                    // Financial logic extracted from processFinancialsForStatusChange but without setWallet
+                    const compFees = settings.companySpecificFees?.[o.shippingCompany];
+                    const useCustom = compFees?.useCustomFees ?? false;
+                    
+                    if ((newStatus === 'تم_الارسال' || newStatus === 'قيد_الشحن') && !orderToUpdate.shippingAndInsuranceDeducted) {
+                        allNewTransactions.push({ id: `ship_${o.id}`, type: 'سحب', amount: o.shippingFee, date: new Date().toISOString(), note: `خصم مصاريف شحن أوردر #${o.orderNumber}`, category: 'shipping' });
+                        
+                        const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+                        if (o.isInsured && insuranceRate > 0) {
+                            const insuranceFee = ((o.productPrice + o.shippingFee) * insuranceRate) / 100;
+                            allNewTransactions.push({ id: `insure_${o.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${o.orderNumber}`, category: 'insurance' });
+                        }
 
-    setSelectedOrders([]);
-    if(selectElement) selectElement.value = 'default';
+                        if (o.includeInspectionFee && !orderToUpdate.inspectionFeeDeducted) {
+                            const feeAmount = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
+                            if (feeAmount > 0) {
+                                allNewTransactions.push({ id: `insp_${o.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${o.orderNumber}`, category: 'inspection' });
+                                orderToUpdate.inspectionFeeDeducted = true;
+                            }
+                        }
+                        orderToUpdate.shippingAndInsuranceDeducted = true;
+                    }
+                    
+                    if ((newStatus === 'مرتجع' || newStatus === 'فشل_التوصيل') && !orderToUpdate.returnFeeDeducted) {
+                        const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
+                        if (applyReturnFee) {
+                            const returnFeeAmount = useCustom ? compFees!.returnShippingFee : settings.returnShippingFee;
+                            if (returnFeeAmount > 0) {
+                                allNewTransactions.push({ id: `return_${o.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${o.orderNumber}`, category: 'return' });
+                                orderToUpdate.returnFeeDeducted = true;
+                            }
+                        }
+                    }
+
+                    return orderToUpdate;
+                }
+                return o;
+            });
+
+            // Update Both states once
+            if (allNewTransactions.length > 0) {
+                setWallet(prev => ({ ...prev, transactions: [...allNewTransactions, ...prev.transactions] }));
+            }
+            setOrders(updatedOrders);
+
+            setSelectedOrders([]);
+            if(selectElement) selectElement.value = 'default';
+            setConfirmation(prev => ({ ...prev, isOpen: false }));
+        }
+    });
   };
+
 
   const handleBulkPrintLabels = () => {
     const selected = orders.filter(o => selectedOrders.includes(o.id));
@@ -1093,8 +1180,22 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
               <option value="default">تغيير الحالة لـ...</option>
               {ORDER_STATUSES.map(s => <option key={s} value={s} className="text-slate-900">{ORDER_STATUS_METADATA[s]?.label || s}</option>)}
             </select>
+            <button 
+              onClick={() => handleBulkStatusChange('مؤرشف')} 
+              className="px-3 py-1 flex items-center gap-1 hover:text-amber-500 transition-colors bg-white/10 rounded-lg text-xs"
+              title="أرشفة المحددة"
+            >
+              <Archive size={16} /> أرشفة
+            </button>
+            <button 
+              onClick={() => handleBulkStatusChange('ملغي')} 
+              className="px-3 py-1 flex items-center gap-1 hover:text-red-500 transition-colors bg-white/10 rounded-lg text-xs"
+              title="إلغاء المحددة"
+            >
+              <XCircle size={16} /> إلغاء
+            </button>
             <button onClick={handleBulkPrintLabels} className="hover:text-primary transition-colors"><Printer size={20}/></button>
-            <button onClick={() => setShowBulkDeleteConfirm(true)} className="hover:text-rose-500 transition-colors"><Trash2 size={20}/></button>
+            <button onClick={handleBulkDelete} className="hover:text-rose-500 transition-colors"><Trash2 size={20}/></button>
           </div>
           <button onClick={() => setSelectedOrders([])} className="p-1 hover:bg-white/10 rounded-full"><X size={18}/></button>
         </motion.div>
@@ -1271,6 +1372,40 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       {orderToDelete && ( <ConfirmationModal title="حذف الطلب؟" description={`هل أنت متأكد من حذف طلب العميل "${orderToDelete.customerName}"؟`} onConfirm={handleDeleteOrder} onCancel={() => setOrderToDelete(null)} /> )}
       {showBulkDeleteConfirm && ( <ConfirmationModal title="حذف الطلبات المحددة؟" description={`هل أنت متأكد من حذف ${selectedOrders.length} طلبات؟ هذا الإجراء لا يمكن التراجع عنه.`} onConfirm={handleBulkDelete} onCancel={() => setShowBulkDeleteConfirm(false)} /> )}
       {orderForWaybill && orderForModal && ( <WaybillModal order={orderForModal} onClose={() => setOrderForWaybill(null)} onSave={handleSaveWaybill} /> )}
+      
+      {confirmation.isOpen && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] shadow-2xl p-8 text-center animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800">
+                <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg rotate-3 ${
+                    confirmation.type === 'danger' ? 'bg-red-50 dark:bg-red-500/10 text-red-500' : 
+                    confirmation.type === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-500' : 
+                    'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500'
+                }`}>
+                    <AlertTriangle size={40} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">{confirmation.title}</h3>
+                <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed font-medium">{confirmation.message}</p>
+                <div className="flex flex-col gap-3">
+                    <button 
+                        onClick={confirmation.onConfirm}
+                        className={`w-full py-4 text-white rounded-2xl font-black text-lg shadow-lg transition-all active:scale-[0.98] ${
+                            confirmation.type === 'danger' ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20' : 
+                            confirmation.type === 'warning' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20' : 
+                            'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                        }`}
+                    >
+                        {confirmation.confirmText || 'تأكيد'}
+                    </button>
+                    <button 
+                        onClick={() => setConfirmation(prev => ({ ...prev, isOpen: false }))}
+                        className="w-full py-4 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all"
+                    >
+                        تراجع
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
       
       {showAuditLog && (
         <AuditLogModal 

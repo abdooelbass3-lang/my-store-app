@@ -371,14 +371,8 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const idsToDelete = [...dbItems]
                 .filter((item: any) => {
                     if (tableName === 'orders') {
-                        const details = item.details || {};
-                        // Check if it's a synced order (based on metadata if present)
-                        const isSynced = details.source === 'synced';
-                        if (isSynced && !stateIds.has(item[dbIdColumn])) {
-                             // This is a synced order that is NOT in the current app state.
-                             // We should NOT delete it automatically to prevent flickering.
-                             return false; 
-                        }
+                        // We previously protected synced orders here, but it caused issues with intentional deletions.
+                        // Now we allow any item missing from state to be deleted.
                     }
                     return !stateIds.has(item[dbIdColumn]);
                 })

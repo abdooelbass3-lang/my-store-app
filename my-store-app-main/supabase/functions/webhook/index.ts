@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
                 weight: 0,
               })),
               shippingFee: orderData.shippingRateCost?.amount || 0,
-              status: "جديد",
+              status: "في_انتظار_المكالمة",
               productName: (orderData.items && orderData.items[0]) ? orderData.items[0].title : "طلب عبر ويلت",
               productPrice: orderData.subtotal?.amount || 0,
               productCost: 0,

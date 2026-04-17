@@ -16,14 +16,37 @@ function mapWuiltOrder(order: any, storeId: string) {
     const discount = financial.discount?.amount || 0;
     const shippingFee = financial.shipping?.amount || 0;
 
-    // Status mapping based on Wuilt fulfillment status
-    let mappedStatus = 'في_انتظار_المكالمة'; // Default for UNFULFILLED is waiting for call
-    if (order.fulfillmentStatus === 'FULFILLED') {
-        mappedStatus = 'قيد_التنفيذ';
-    } else if (order.fulfillmentStatus === 'CANCELED') {
+    // Status mapping based on Wuilt fulfillment/shipping status
+    let mappedStatus = 'في_انتظار_المكالمة'; 
+    
+    // Explicit platform terminal flags
+    const isActuallyArchived = order.isArchived === true;
+    const isActuallyCanceled = order.isCanceled === true || order.fulfillmentStatus === 'CANCELED';
+
+    if (isActuallyArchived) {
+        mappedStatus = 'مؤرشف';
+    } else if (isActuallyCanceled) {
         mappedStatus = 'ملغي';
-    } else if (order.fulfillmentStatus === 'AWAITING_FULFILLMENT') {
+    } else if (order.fulfillmentStatus === 'FULFILLED') {
+        // Map based on shipping status if available
+        if (order.shippingStatus === 'DELIVERED') {
+            mappedStatus = 'تم_توصيلها';
+        } else if (order.shippingStatus === 'SHIPPED') {
+            mappedStatus = 'قيد_الشحن';
+        } else if (order.shippingStatus === 'RETURNED' || order.shippingStatus === 'FAILURE') {
+            mappedStatus = 'مرتجع';
+        } else {
+            mappedStatus = 'قيد_التنفيذ';
+        }
+    } else if (order.paymentStatus === 'PAID' && (order.fulfillmentStatus === 'AWAITING_FULFILLMENT' || order.fulfillmentStatus === 'PLACED')) {
+        // If paid but not yet fulfilled, it might be confirmed already in some workflows
         mappedStatus = 'في_انتظار_المكالمة';
+    } else {
+        mappedStatus = 'في_انتظار_المكالمة';
+    }
+
+    if (isActuallyArchived || isActuallyCanceled) {
+        console.log(`[SYNC] Mapping terminal order ${order.orderSerial}: archived=${isActuallyArchived}, canceled=${isActuallyCanceled} -> status: ${mappedStatus}`);
     }
 
     return {
@@ -63,7 +86,8 @@ function mapWuiltOrder(order: any, storeId: string) {
             preparationStatus: order.fulfillmentStatus === 'FULFILLED' ? 'تم التجهيز' : 'قيد التجهيز',
             platform: 'wuilt',
             platformOrderId: order.id,
-            paymentMethod: order.paymentIntent?.paymentProvider || 'غير محدد'
+            paymentMethod: order.paymentIntent?.paymentProvider || 'غير محدد',
+            source: 'synced'
         }
     };
 }
@@ -657,6 +681,16 @@ async function startServer() {
         const mappedItems = itemsToProcess.map(item => mapper(item, storeId)).filter(Boolean);
         
         if (mappedItems.length > 0) {
+            import('fs').then(fs => {
+               const logLine = `[${new Date().toISOString()}] Sync Store: ${storeId}, Items: ${mappedItems.length}\n` + 
+                 mappedItems.slice(0, 5).map(m => {
+                    const raw = itemsToProcess.find(i => `wuilt-${i.id}` === m.id);
+                    return ` - Order #${m.order_number}: Status=${m.status} (Raw keys: ${Object.keys(raw || {}).join(',')}, isArchived=${raw?.isArchived})`;
+                 }).join('\n') + '\n---\n';
+               fs.appendFileSync('sync_debug.log', logLine);
+            });
+            
+            console.log(`[SYNC] Mapping result: ${mappedItems.length} items. Samples logged to sync_debug.log`);
             // Check for duplicates before batch insert
             const { data: existingIds } = await supabase.from(table).select('id').in('id', mappedItems.map(o => o.id));
             const existingSet = new Set(existingIds?.map(i => i.id) || []);
@@ -671,9 +705,39 @@ async function startServer() {
 
             // Update existing items (Sync both products and orders)
             if (updateItems.length > 0) {
+                // Batch fetch existing statuses to avoid per-order database calls
+                let existingOrdersMap: Record<string, string> = {};
+                if (table === 'orders') {
+                    const { data: currentOrders } = await supabase
+                        .from('orders')
+                        .select('id, status')
+                        .in('id', updateItems.map(o => o.id));
+                    
+                    if (currentOrders) {
+                        currentOrders.forEach(o => {
+                            existingOrdersMap[o.id] = o.status;
+                        });
+                    }
+                }
+
+                const terminalStatuses = ['مؤرشف', 'ملغي', 'تم_توصيلها', 'تم_التحصيل'];
+
                 for (const item of updateItems) {
-                    // For orders, we might want to preserve some local fields, but for now we sync as requested
-                    await supabase.from(table).update(item).eq('id', item.id);
+                    if (table === 'orders') {
+                        const existingStatus = existingOrdersMap[item.id];
+                        const isTerminalStatus = terminalStatuses.includes(item.status);
+
+                        // If the platform says it's terminal (Arvhived/Canceled/Delivered), we ALWAYS take it.
+                        // Otherwise, we respect the local status if it was already processed.
+                        if (existingStatus && !isTerminalStatus && existingStatus !== 'في_انتظار_المكالمة' && existingStatus !== 'جديد') {
+                            const { status, ...itemWithoutStatus } = item;
+                            await supabase.from(table).update(itemWithoutStatus).eq('id', item.id);
+                        } else {
+                            await supabase.from(table).update(item).eq('id', item.id);
+                        }
+                    } else {
+                        await supabase.from(table).update(item).eq('id', item.id);
+                    }
                 }
             }
             

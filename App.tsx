@@ -620,38 +620,44 @@ export const AppComponent = () => {
         completeLogin(userToImpersonate, null); 
     };
 
-    const refreshStoreData = (storeId: string) => {
+    const refreshStoreData = (storeId: string): Promise<void> => {
         if (isSavingRef.current) {
             console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
-            return;
+            return Promise.resolve();
         }
 
         if (!storeId || storeId !== activeStoreId) {
             if (storeId !== activeStoreId) console.log(`[REALTIME] Ignoring refresh for non-active store: ${storeId}`);
-            return;
+            return Promise.resolve();
         }
 
         if (refreshDebounceTimers.current[storeId]) {
             clearTimeout(refreshDebounceTimers.current[storeId]!);
         }
 
-        refreshDebounceTimers.current[storeId] = setTimeout(async () => {
-            console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
-            const storeData = await db.getStoreData(storeId) as StoreData | null;
-            if (storeData) {
-                const sanitizedStoreData = sanitizeData(storeData);
-                
-                setAllStoresData(prev => {
-                    const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
-                    if (isIdentical) return prev;
+        return new Promise((resolve) => {
+            refreshDebounceTimers.current[storeId] = setTimeout(async () => {
+                console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
+                const storeData = await db.getStoreData(storeId) as StoreData | null;
+                if (storeData) {
+                    const sanitizedStoreData = sanitizeData(storeData);
                     
-                    isRefreshing.current = true;
-                    return { ...prev, [storeId]: sanitizedStoreData };
-                });
-                console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
-            }
-            refreshDebounceTimers.current[storeId] = null;
-        }, 500);
+                    setAllStoresData(prev => {
+                        const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
+                        if (isIdentical) {
+                            resolve();
+                            return prev;
+                        }
+                        
+                        isRefreshing.current = true;
+                        return { ...prev, [storeId]: sanitizedStoreData };
+                    });
+                    console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
+                }
+                refreshDebounceTimers.current[storeId] = null;
+                resolve();
+            }, 500);
+        });
     };
 
     const refreshGlobalData = () => {
@@ -722,17 +728,24 @@ export const AppComponent = () => {
                     if (config?.isActive) {
                         console.log(`[AUTO-SYNC] Triggering background sync for ${platformId}...`);
                         try {
+                            // Set refreshing flag early to block auto-saves during the sync window
+                            isRefreshing.current = true;
+                            
                             const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' }
                             });
+                            
                             if (response.ok) {
                                 console.log(`[AUTO-SYNC] Successfully synced orders for ${platformId}`);
-                                // We don't call refreshStoreData here because the Realtime listener for 'orders' table 
-                                // or the next 5s database poll will pick up the changes.
+                                // Immediately refresh to pick up the new data and avoid stale state save-backs
+                                await refreshStoreData(activeStoreId);
+                            } else {
+                                isRefreshing.current = false;
                             }
                         } catch (err) {
                             console.error(`[AUTO-SYNC] Failed to sync ${platformId}:`, err);
+                            isRefreshing.current = false;
                         }
                     }
                 }
@@ -790,7 +803,7 @@ export const AppComponent = () => {
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
         forceSync,
-        onRefresh: () => activeStoreId && refreshStoreData(activeStoreId),
+        onRefresh: async () => { if (activeStoreId) await refreshStoreData(activeStoreId); },
         customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setCustomers: (updater: any) => {
             if(activeStoreId) {
@@ -1028,7 +1041,7 @@ export const AppComponent = () => {
                     <Route path="design-templates" element={<ComingSoonPage />} />
                     <Route path="domain" element={<ComingSoonPage />} />
                     <Route path="legal-pages" element={<ComingSoonPage />} />
-                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateStoreData={(newStoreData) => setAllStoresData(prev => ({ ...prev, [activeStoreId]: newStoreData }))} onRefresh={() => activeStoreId && refreshStoreData(activeStoreId)} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
+                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateSettings={pageProps.setSettings} onRefresh={pageProps.onRefresh} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                     <Route path="settings/tax" element={<ComingSoonPage />} />
                     <Route path="settings/developer" element={<DeveloperSettingsPage settings={pageProps.settings} setSettings={pageProps.setSettings} activeStoreId={activeStoreId} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                 </Route>
