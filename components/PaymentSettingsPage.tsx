@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, PaymentMethod } from './types';
+import { Settings, PaymentMethod } from '../types';
 import { CreditCard, Plus, Trash2, Edit3, Smartphone, Banknote, Save, X } from 'lucide-react';
 
 interface ToggleButtonProps { active: boolean; onToggle: () => void; variant?: "blue" | "emerald" | "amber"; disabled?: boolean; }

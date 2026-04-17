@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, Review } from './types';
+import { Settings, Review } from '../types';
 import { Star, ThumbsUp, ThumbsDown, Trash2, CheckCircle, Clock, MessageSquare, XCircle } from 'lucide-react';
 
 interface ReviewsPageProps {

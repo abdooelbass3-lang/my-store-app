@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 // FIX: Updating react-router-dom import to be compatible with v5.
 import { Link } from 'react-router-dom';
 import { Search, Package, Truck, CheckCircle, XCircle } from 'lucide-react';
-import { Order, OrderStatus } from './types';
+import { Order, OrderStatus } from '../types';
 
 interface OrderTrackingPageProps {
   orders: Order[];

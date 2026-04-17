@@ -1,4 +1,4 @@
-import { Order } from './types';
+import { Order } from '../types';
 
 export const generateShippingLabelHTML = (order: Order, storeName: string) => {
   const totalAmount = (order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount));

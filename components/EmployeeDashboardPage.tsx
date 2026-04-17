@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Order, User, Settings, OrderStatus } from './types';
+import { Order, User, Settings, OrderStatus } from '../types';
 import { PhoneForwarded, CheckCircle, ArrowLeft, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 

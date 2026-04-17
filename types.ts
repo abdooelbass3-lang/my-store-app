@@ -429,6 +429,8 @@ export interface Order {
   id: string;
   orderNumber: string;
   waybillNumber?: string;
+  trackingUrl?: string;
+  platformOrderId?: string;
   date: string;
   shippingCompany: string;
   shippingArea: string;
@@ -441,6 +443,7 @@ export interface Order {
   notes?: string;
   items: OrderItem[];
   shippingFee: number;
+  tax?: number;
   status: OrderStatus;
   productName: string; 
   productPrice: number; 
@@ -449,8 +452,8 @@ export interface Order {
   discount: number;
   totalAmountOverride?: number;
   totalAmountOverrideReason?: string;
-  includeInspectionFee: boolean; 
-  isInsured: boolean; 
+  includeInspectionFee?: boolean; 
+  isInsured?: boolean; 
   inspectionFeeDeducted?: boolean;
   inspectionFeePaidByCustomer?: boolean;
   shippingAndInsuranceDeducted?: boolean;

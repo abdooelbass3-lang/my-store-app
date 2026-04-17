@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Updating react-router-dom import to be compatible with v5.
 import { Link } from 'react-router-dom';
-import { Settings, StoreCustomization, Store, StoreSection, Banner } from './types';
+import { Settings, StoreCustomization, Store, StoreSection, Banner } from '../types';
 import { Brush, Save, Image, Type, Info, CheckCircle, Eye, Palette, LayoutDashboard, CaseSensitive, Megaphone, Share2, Link as LinkIcon, LayoutTemplate, GripVertical, ChevronsUpDown, X, Star, Plus, Trash2, Edit3 } from 'lucide-react';
 import StorefrontPage from './StorefrontPage';
 

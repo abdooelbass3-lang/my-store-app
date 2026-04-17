@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Order } from './types';
+import { Order } from '../types';
 import { Search, MessageSquare, Send, ArrowRight, Phone, CornerUpLeft, QrCode } from 'lucide-react';
 
 interface Customer {

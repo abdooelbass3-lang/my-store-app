@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Supplier, SupplyOrder, Transaction } from './types';
+import { Settings, Supplier, SupplyOrder, Transaction } from '../types';
 import { UserPlus, Truck, Save, Plus, Package, Calendar, DollarSign, User } from 'lucide-react';
 
 interface SuppliersPageProps {

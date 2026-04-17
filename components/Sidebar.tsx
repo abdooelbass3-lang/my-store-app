@@ -7,7 +7,7 @@ import {
     Wallet as WalletIcon, ArrowRightLeft, LayoutGrid, Brush, FileText, Globe, BarChart2, Shield, 
     AppWindow, Settings2, CreditCard, Landmark, Users2, Code, Receipt, ChevronRight, X, UserCog, History, Megaphone, MessageSquare, Wand2, DollarSign 
 } from 'lucide-react';
-import { Store as StoreType } from './types';
+import { Store as StoreType } from '../types';
 
 interface SidebarProps {
   activeStore: StoreType | undefined;

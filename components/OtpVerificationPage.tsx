@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KeyRound, Mail, RefreshCw, Loader2 } from 'lucide-react';
-import { User } from './types';
+import { User } from '../types';
 
 interface OtpVerificationPageProps {
   user: User;

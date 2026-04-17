@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Wallet, Transaction, TransactionCategory } from './types';
+import { Wallet, Transaction, TransactionCategory } from '../types';
 import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 

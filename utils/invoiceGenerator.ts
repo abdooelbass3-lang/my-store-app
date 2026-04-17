@@ -1,5 +1,5 @@
 
-import { Order, Settings, OrderItem } from './types';
+import { Order, Settings, OrderItem } from '../types';
 
 export const generateInvoiceHTML = (order: Order, settings: Settings, storeName: string) => {
   const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount);

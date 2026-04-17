@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, GlobalOption } from './types';
+import { Settings, GlobalOption } from '../types';
 import { Layers, Plus, Trash2 } from 'lucide-react';
 
 interface ProductOptionsPageProps {

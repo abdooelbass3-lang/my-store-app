@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { X, ShoppingCart, Trash2, Plus, Minus, Package } from 'lucide-react';
-import { OrderItem } from './types';
+import { OrderItem } from '../types';
 
 interface CartSidebarProps {
   isOpen: boolean;

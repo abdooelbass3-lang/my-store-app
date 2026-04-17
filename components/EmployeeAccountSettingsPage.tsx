@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User } from './types';
+import { User } from '../types';
 import { Save, CheckCircle, User as UserIcon } from 'lucide-react';
 
 interface EmployeeAccountSettingsPageProps {

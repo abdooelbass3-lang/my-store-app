@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, WebhookIntegration } from './types';
+import { Settings, WebhookIntegration } from '../types';
 import { Code, Webhook, Key, Trash, Plus, Save, Server, Shield, ShoppingCart, Copy, CheckCircle2 } from 'lucide-react';
 
 interface DeveloperSettingsPageProps {

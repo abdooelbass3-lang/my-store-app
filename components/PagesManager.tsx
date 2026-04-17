@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, CustomPage } from './types';
+import { Settings, CustomPage } from '../types';
 import { FileText, Plus, Edit3, Trash2, Globe, Save } from 'lucide-react';
 
 interface PagesManagerProps {

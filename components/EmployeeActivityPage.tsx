@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Order, User, OrderStatus as OrderStatusType, ConfirmationLog } from './types';
+import { Order, User, OrderStatus as OrderStatusType, ConfirmationLog } from '../types';
 import { History, Search, User as UserIcon, Calendar, ArrowRight, Package, CheckCircle, Clock, XCircle, RefreshCcw, Archive, ArrowRightLeft, Truck } from 'lucide-react';
 import { motion } from 'framer-motion';
 

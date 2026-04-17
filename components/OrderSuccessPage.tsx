@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 // FIX: Updating react-router-dom import to be compatible with v5.
 import { Link, useParams } from 'react-router-dom';
 import { CheckCircle, ShoppingBag, ArrowLeft } from 'lucide-react';
-import { Settings, Order } from './types';
+import { Settings, Order } from '../types';
 
 interface OrderSuccessPageProps {
   orders: Order[];

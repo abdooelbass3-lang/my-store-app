@@ -4,50 +4,94 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 
+// Governorate translation map
+const GOVERNORATE_MAP: Record<string, string> = {
+    'CAIRO': 'القاهرة',
+    'GIZA': 'الجيزة',
+    'ALEXANDRIA': 'الإسكندرية',
+    'QALYUBIA': 'القليوبية',
+    'DAKAHLIA': 'الدقهلية',
+    'SHARKIA': 'الشرقية',
+    'GHARBIA': 'الغربية',
+    'MONUFIA': 'المنوفية',
+    'BEHEIRA': 'البحيرة',
+    'KAFR EL SHEIKH': 'كفر الشيخ',
+    'KAFRELSHEIKH': 'كفر الشيخ',
+    'DAMIETTA': 'دمياط',
+    'PORT SAID': 'بورسعيد',
+    'ISMAILIA': 'الإسماعيلية',
+    'SUEZ': 'السويس',
+    'BENI SUEF': 'بني سويف',
+    'FAYOUM': 'الفيوم',
+    'MINYA': 'المنيا',
+    'ASSUIT': 'أسيوط',
+    'SOhag': 'سوهاج',
+    'QENA': 'قنا',
+    'LUXOR': 'الأقصر',
+    'ASWAN': 'أسوان',
+    'RED SEA': 'البحر الأحمر',
+    'NEW VALLEY': 'الوادي الجديد',
+    'MATROUH': 'مطروح',
+    'NORTH SINAI': 'شمال سيناء',
+    'SOUTH SINAI': 'جنوب سيناء',
+};
+
 // Helper to map Wuilt order data to internal schema
-function mapWuiltOrder(order: any, storeId: string) {
+function mapWuiltOrder(order: any, storeId: string, settings?: any) {
     if (!order) return null;
 
     const id = `wuilt-${order.id}`;
     
     const financial = order.receipt || {};
-    const totalPrice = financial.total?.amount || 0;
-    const subtotal = financial.subtotal?.amount || 0;
-    const discount = financial.discount?.amount || 0;
-    const shippingFee = financial.shipping?.amount || 0;
+    const shipmentDetails = order.shipmentDetails || {};
+    const totalPrice = financial.total?.amount || financial.total || 0;
+    const subtotal = financial.subtotal?.amount || financial.subtotal || 0;
+    const discount = financial.discount?.amount || financial.discount || 0;
+    const tax = financial.tax?.amount || financial.tax || 0;
+    
+    // Shipping fee mapping - prefer actual cost details if waybill is generated
+    const shippingFee = shipmentDetails.shippingFee?.amount || shipmentDetails.shippingFee || 
+                       order.packagingDetails?.shippingCostDetails?.baseCost ||
+                       financial.shipping?.amount || financial.shipping || 
+                       order.shippingRateCost?.amount || order.shippingRateCost || 0;
 
     // Status mapping based on Wuilt fulfillment/shipping status
     let mappedStatus = 'في_انتظار_المكالمة'; 
     
-    // Explicit platform terminal flags
+    // Priority 1: Terminal platform flags
     const isActuallyArchived = order.isArchived === true;
     const isActuallyCanceled = order.isCanceled === true || order.fulfillmentStatus === 'CANCELED';
 
+    // Priority 2: Shipment status (more specific for tracking)
+    const wuiltShipmentStatus = shipmentDetails.shippingStatus || order.shippingStatus;
+    
     if (isActuallyArchived) {
         mappedStatus = 'مؤرشف';
     } else if (isActuallyCanceled) {
         mappedStatus = 'ملغي';
-    } else if (order.fulfillmentStatus === 'FULFILLED') {
-        // Map based on shipping status if available
-        if (order.shippingStatus === 'DELIVERED') {
+    } else if (order.fulfillmentStatus === 'FULFILLED' || shipmentDetails.airWayBill) {
+        if (wuiltShipmentStatus === 'DELIVERED') {
             mappedStatus = 'تم_توصيلها';
-        } else if (order.shippingStatus === 'SHIPPED') {
+        } else if (wuiltShipmentStatus === 'SHIPPED' || shipmentDetails.airWayBill) {
+            mappedStatus = 'تم_الارسال'; // In our app 'تم_الارسال' usually means it was handed to courier
+        } else if (wuiltShipmentStatus === 'IN_TRANSIT') {
             mappedStatus = 'قيد_الشحن';
-        } else if (order.shippingStatus === 'RETURNED' || order.shippingStatus === 'FAILURE') {
+        } else if (wuiltShipmentStatus === 'RETURNED' || wuiltShipmentStatus === 'FAILURE') {
             mappedStatus = 'مرتجع';
-        } else {
+        } else if (order.fulfillmentStatus === 'FULFILLED') {
             mappedStatus = 'قيد_التنفيذ';
         }
-    } else if (order.paymentStatus === 'PAID' && (order.fulfillmentStatus === 'AWAITING_FULFILLMENT' || order.fulfillmentStatus === 'PLACED')) {
-        // If paid but not yet fulfilled, it might be confirmed already in some workflows
-        mappedStatus = 'في_انتظار_المكالمة';
-    } else {
-        mappedStatus = 'في_انتظار_المكالمة';
     }
 
-    if (isActuallyArchived || isActuallyCanceled) {
-        console.log(`[SYNC] Mapping terminal order ${order.orderSerial}: archived=${isActuallyArchived}, canceled=${isActuallyCanceled} -> status: ${mappedStatus}`);
-    }
+    const rawGovernorate = (order.shippingAddress?.areaSnapshot?.stateName || order.shippingAddress?.stateName || '').toUpperCase();
+    const mappedGovernorate = GOVERNORATE_MAP[rawGovernorate] || order.shippingAddress?.areaSnapshot?.stateName || order.shippingAddress?.stateName || '';
+
+    const waybillNumber = shipmentDetails.airWayBill || shipmentDetails.orderTrackingNumber || '';
+    const trackingUrl = shipmentDetails.trackingURL || '';
+    const shippingCompany = shipmentDetails.shippedWith || order.wuiltShipmentProvider || 'ويلت';
+
+    const defaultIncludeInspection = settings?.enableInspection ?? true;
+    const defaultIsInsured = settings?.enableInsurance ?? true;
 
     return {
         id,
@@ -58,21 +102,23 @@ function mapWuiltOrder(order: any, storeId: string) {
         date: order.createdAt || new Date().toISOString(),
         total_price: totalPrice,
         details: {
-            shippingCompany: order.wuiltShipmentProvider || 'ويلت',
-            shippingArea: order.shippingAddress?.areaSnapshot?.stateName || order.shippingAddress?.stateName || 'غير محدد',
+            shippingCompany,
+            shippingArea: mappedGovernorate || 'غير محدد',
+            waybillNumber,
+            trackingUrl,
             customerPhone: order.customer?.phone || order.shippingAddress?.phone || 'غير متوفر',
             customerPhone2: order.shippingAddress?.secondPhone || '',
-            customerAddress: `${order.shippingAddress?.addressLine1 || ''} ${order.shippingAddress?.addressLine2 || ''}`.trim() || 'لا يوجد عنوان',
+            customerAddress: order.shippingAddress?.addressLine1 || order.shippingAddress?.addressLine2 || 'لا يوجد عنوان',
             city: order.shippingAddress?.areaSnapshot?.cityName || order.shippingAddress?.cityName || '',
-            governorate: order.shippingAddress?.areaSnapshot?.stateName || order.shippingAddress?.stateName || '',
+            governorate: mappedGovernorate,
             notes: order.shippingAddress?.notes || '',
             items: (order.items || []).map((item: any) => ({
-                productId: item.productSnapshot?.id || item.id,
+                productId: `wuilt-${item.productSnapshot?.id || item.id}`,
                 name: item.title || 'منتج',
                 quantity: item.quantity || 1,
-                price: item.variantSnapshot?.price || 0,
+                price: item.variantSnapshot?.price?.amount || item.variantSnapshot?.price || item.productSnapshot?.price?.amount || 0,
                 cost: 0,
-                weight: 0
+                weight: item.variantSnapshot?.weight || item.productSnapshot?.weight || 0
             })),
             shippingFee: shippingFee,
             productName: (order.items && order.items[0]) ? order.items[0].title : 'طلب عبر ويلت', 
@@ -80,13 +126,15 @@ function mapWuiltOrder(order: any, storeId: string) {
             productCost: 0,
             weight: order.packagingDetails?.extraWeight || 0,
             discount: discount,
-            includeInspectionFee: false,
-            isInsured: false,
+            tax: tax,
+            includeInspectionFee: order.packagingDetails?.isOpenShipment ?? order.shipmentDetails?.allowOpen ?? order.tags?.some((t:any) => t.name === 'open_shipment' || t.name === 'inspection') === true ? true : defaultIncludeInspection,
+            isInsured: ((order.packagingDetails?.shippingCostDetails?.insurancePercentage || 0) > 0) || order.packagingDetails?.isInsured || order.shipmentDetails?.hasInsurance || order.tags?.some((t:any) => t.name === 'insured') === true ? true : defaultIsInsured,
             paymentStatus: order.paymentStatus === 'PAID' ? 'تم الدفع' : 'معلق',
             preparationStatus: order.fulfillmentStatus === 'FULFILLED' ? 'تم التجهيز' : 'قيد التجهيز',
             platform: 'wuilt',
             platformOrderId: order.id,
             paymentMethod: order.paymentIntent?.paymentProvider || 'غير محدد',
+            buildingDetails: `${order.shippingAddress?.building || ''} ${order.shippingAddress?.floor ? `دور ${order.shippingAddress.floor}` : ''} ${order.shippingAddress?.apartment ? `شقة ${order.shippingAddress.apartment}` : ''}`.trim() || order.shippingAddress?.addressLine2 || '',
             source: 'synced'
         }
     };
@@ -364,16 +412,6 @@ async function startServer() {
                               cartLimitsEnabled
                               minPerCart
                               maxPerCart
-                              packageDetails {
-                                weight
-                                dimensions {
-                                  length
-                                  width
-                                  height
-                                  __typename
-                                }
-                                __typename
-                              }
                               createdAt
                               updatedAt
                               __typename
@@ -676,7 +714,7 @@ async function startServer() {
 
         // 3. Map and Save
         const table = type === 'products' ? 'products' : 'orders';
-        const mapper = type === 'products' ? mapWuiltProduct : mapWuiltOrder;
+        const mapper = type === 'products' ? mapWuiltProduct : (item: any, id: string) => mapWuiltOrder(item, id, settings);
 
         const mappedItems = itemsToProcess.map(item => mapper(item, storeId)).filter(Boolean);
         
@@ -685,7 +723,7 @@ async function startServer() {
                const logLine = `[${new Date().toISOString()}] Sync Store: ${storeId}, Items: ${mappedItems.length}\n` + 
                  mappedItems.slice(0, 5).map(m => {
                     const raw = itemsToProcess.find(i => `wuilt-${i.id}` === m.id);
-                    return ` - Order #${m.order_number}: Status=${m.status} (Raw keys: ${Object.keys(raw || {}).join(',')}, isArchived=${raw?.isArchived})`;
+                    return ` - Order #${(m as any).order_number}: Status=${(m as any).status} (Raw keys: ${Object.keys(raw || {}).join(',')}, isArchived=${raw?.isArchived})`;
                  }).join('\n') + '\n---\n';
                fs.appendFileSync('sync_debug.log', logLine);
             });
@@ -725,12 +763,12 @@ async function startServer() {
                 for (const item of updateItems) {
                     if (table === 'orders') {
                         const existingStatus = existingOrdersMap[item.id];
-                        const isTerminalStatus = terminalStatuses.includes(item.status);
+                        const isTerminalStatus = terminalStatuses.includes((item as any).status);
 
                         // If the platform says it's terminal (Arvhived/Canceled/Delivered), we ALWAYS take it.
                         // Otherwise, we respect the local status if it was already processed.
                         if (existingStatus && !isTerminalStatus && existingStatus !== 'في_انتظار_المكالمة' && existingStatus !== 'جديد') {
-                            const { status, ...itemWithoutStatus } = item;
+                            const { status, ...itemWithoutStatus } = (item as any);
                             await supabase.from(table).update(itemWithoutStatus).eq('id', item.id);
                         } else {
                             await supabase.from(table).update(item).eq('id', item.id);
@@ -786,7 +824,7 @@ async function startServer() {
           if (platform === 'wuilt') {
              const { event, payload: wuiltPayload } = payload;
              if (event === 'ORDER_PLACED' || event === 'ORDER_FULFILLED' || event === 'ORDER_UPDATED') {
-                 newOrder = mapWuiltOrder(wuiltPayload.order, storeId);
+                 newOrder = mapWuiltOrder(wuiltPayload.order, storeId, storeRow.settings);
              }
           }
 

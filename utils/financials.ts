@@ -1,4 +1,4 @@
-import { Order, Settings } from './types';
+import { Order, Settings } from '../types';
 
 export const calculateCodFee = (order: Order, settings: Settings): number => {
     const compFees = settings.companySpecificFees?.[order.shippingCompany];

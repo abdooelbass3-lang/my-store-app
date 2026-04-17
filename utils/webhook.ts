@@ -1,4 +1,4 @@
-import { Order, Settings } from './types';
+import { Order, Settings } from '../types';
 
 export const triggerWebhooks = async (order: Order, settings: Settings) => {
     if (!settings.webhookIntegrations || settings.webhookIntegrations.length === 0) return;

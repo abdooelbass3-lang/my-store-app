@@ -1,7 +1,7 @@
 // FIX: Import 'useMemo' from 'react' to resolve 'Cannot find name' error.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { User, Store } from './types';
+import { User, Store } from '../types';
 import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor } from 'lucide-react';
 
 const PATH_TITLES: { [key: string]: string } = {

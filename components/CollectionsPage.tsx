@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Collection } from './types';
+import { Settings, Collection } from '../types';
 import { Grid3x3, Plus, Trash2, Edit3, Image as ImageIcon, X } from 'lucide-react';
 
 interface CollectionsPageProps {

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Order, Settings, Product, Wallet, OrderItem, User, Store } from "./types";
+import { Order, Settings, Product, Wallet, OrderItem, User, Store } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 

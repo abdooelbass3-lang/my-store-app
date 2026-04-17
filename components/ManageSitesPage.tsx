@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, ShoppingCart, ExternalLink, Inbox, Eye, UserPlus, Settings as SettingsIcon, XCircle, Send, Filter, ChevronsUpDown, Save, Store as StoreIconLucide, Tag, MonitorSmartphone } from 'lucide-react';
-import { User, Store, StoreData, Employee } from './types';
+import { User, Store, StoreData, Employee } from '../types';
 import { motion } from 'framer-motion';
 
 const containerVariants = {

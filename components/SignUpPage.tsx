@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ShoppingCart, Store, Mail, User as UserIcon, ShieldAlert, Phone, KeyRound, LogIn, UserPlus, Loader2, X, BarChart, Settings, Users, ArrowLeft, CheckCircle } from 'lucide-react';
-import { User } from './types';
+import { User } from '../types';
 import { motion } from 'framer-motion';
 
 // --- Reusable UI Components ---

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store, Employee, User, AuditLog } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA } from '../constants';
 import { motion, Variants } from 'framer-motion';
@@ -236,7 +236,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   };
   
   const activeCompanies = useMemo(() => 
-    Object.keys(settings.shippingOptions).filter(company => settings.activeCompanies[company] !== false),
+    Object.keys(settings.shippingOptions || {}).filter(company => settings.activeCompanies?.[company] !== false),
     [settings.shippingOptions, settings.activeCompanies]
   );
   
@@ -267,6 +267,45 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
   const [newOrder, setNewOrder] = useState<NewOrderState>(getInitialNewOrder());
 
+  // Normalization logic for synced orders when editing
+  const normalizeSyncedOrder = (order: Order): Order => {
+    if (order.source !== 'synced') return order;
+
+    const GOVERNORATE_MAP: Record<string, string> = {
+        'CAIRO': 'القاهرة', 'GIZA': 'الجيزة', 'ALEXANDRIA': 'الإسكندرية', 'QALYUBIA': 'القليوبية',
+        'DAKAHLIA': 'الدقهلية', 'SHARKIA': 'الشرقية', 'GHARBIA': 'الغربية', 'MONUFIA': 'المنوفية',
+        'BEHEIRA': 'البحيرة', 'KAFR EL SHEIKH': 'كفر الشيخ', 'KAFRELSHEIKH': 'كفر الشيخ',
+        'DAMIETTA': 'دمياط', 'PORT SAID': 'بورسعيد', 'ISMAILIA': 'الإسماعيلية', 'SUEZ': 'السويس',
+        'BENI SUEF': 'بني سويف', 'FAYOUM': 'الفيوم', 'MINYA': 'المنيا', 'ASSUIT': 'أسيوط',
+        'SOhag': 'سوهاج', 'QENA': 'قنا', 'LUXOR': 'الأقصر', 'ASWAN': 'أسوان', 'RED SEA': 'البحر الأحمر',
+        'NEW VALLEY': 'الوادي الجديد', 'MATROUH': 'مطروح', 'NORTH SINAI': 'شمال سيناء', 'SOUTH SINAI': 'جنوب سيناء'
+    };
+
+    const govKey = (order.governorate || order.shippingArea || '').toUpperCase();
+    const mappedGov = GOVERNORATE_MAP[govKey] || order.governorate || order.shippingArea || '';
+
+    // Fix item prices and product IDs
+    const normalizedItems = (order.items || []).map(item => ({
+      ...item,
+      productId: item.productId.startsWith('wuilt-') ? item.productId : `wuilt-${item.productId}`,
+      price: (item.price === 0 && order.items.length === 1 && order.productPrice > 0) ? order.productPrice : item.price
+    }));
+
+    return {
+      ...order,
+      governorate: mappedGov,
+      shippingArea: mappedGov,
+      items: normalizedItems,
+      // If shipping fee is 0 but present at root, ensure it's in orderData
+      shippingFee: order.shippingFee || 0
+    };
+  };
+
+  const handleEditOrder = (order: Order) => {
+    setEditingOrder(normalizeSyncedOrder(order));
+    setShowAddModal(true);
+  };
+
   useEffect(() => {
     if (!showAddModal && !editingOrder) {
         setNewOrder(getInitialNewOrder());
@@ -275,19 +314,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
   useEffect(() => {
     const orderData = editingOrder || newOrder;
+    if (!orderData.shippingCompany && !orderData.governorate && !orderData.shippingArea) return;
+
     const options = settings.shippingOptions[orderData.shippingCompany!] || [];
-    const effectiveOptions = options.length > 0 ? options : EGYPT_GOVERNORATES.map((gov, index) => ({
-        id: `gov_fallback_${index}`,
-        label: gov.name,
-        price: 0,
-        baseWeight: 1,
-        extraKgPrice: 0,
-        cities: gov.cities.map((city, cIndex) => ({ id: `city_fallback_${index}_${cIndex}`, name: city, shippingPrice: 0 }))
-    })) as any[];
+    const effectiveOptions = options.length > 0 ? options : generateEgyptShippingOptions();
 
     const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
     if (selectedOpt) {
-      // Check for city-specific price
       let baseFee = selectedOpt.price || 0;
       let extraKgPrice = selectedOpt.extraKgPrice || 0;
       if (orderData.city) {
@@ -317,7 +350,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       const extraWeight = Math.max(0, totalWeight - baseWeight);
       const totalFee = baseFee + (Math.ceil(extraWeight) * extraKgPrice);
       
-      if (orderData.shippingFee !== totalFee || orderData.shippingArea !== selectedOpt.label) {
+      if (orderData.shippingFee !== totalFee || (selectedOpt && orderData.shippingArea !== selectedOpt.label)) {
         if (editingOrder) {
           setEditingOrder(prev => (prev ? { ...prev, shippingFee: totalFee, shippingArea: selectedOpt.label } : prev));
         } else {
@@ -325,7 +358,16 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         }
       }
     }
-  }, [editingOrder, newOrder, settings.shippingOptions]);
+  }, [
+    (editingOrder || newOrder).shippingCompany,
+    (editingOrder || newOrder).governorate,
+    (editingOrder || newOrder).shippingArea,
+    (editingOrder || newOrder).city,
+    JSON.stringify((editingOrder || newOrder).items?.map(i => ({ w: i.weight, q: i.quantity }))),
+    settings.shippingOptions,
+    settings.companySpecificFees,
+    settings.baseWeight
+  ]);
 
   const filteredOrders = useMemo(() => {
     let baseFilter;
@@ -1234,7 +1276,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                     onSelect={() => handleSelectRow(order.id)}
                     onStatusChange={(status) => updateOrderStatus(order.id, status)}
                     onPaymentChange={(status) => handlePaymentStatusChange(order, status)}
-                    onEdit={() => { setEditingOrder(order); setShowAddModal(true); }}
+                    onEdit={() => handleEditOrder(order)}
                     onDelete={() => setOrderToDelete(order)}
                     onPrintInvoice={() => handlePrintInvoice(order)}
                     onPrintLabel={() => handlePrintShippingLabel(order)}
@@ -1261,7 +1303,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                 onSelect={() => handleSelectRow(order.id)}
                 onStatusChange={(status) => updateOrderStatus(order.id, status)}
                 onPaymentChange={(status) => handlePaymentStatusChange(order, status)}
-                onEdit={() => { setEditingOrder(order); setShowAddModal(true); }}
+                onEdit={() => handleEditOrder(order)}
                 onDelete={() => setOrderToDelete(order)}
                 onPrintInvoice={() => handlePrintInvoice(order)}
                 onPrintLabel={() => handlePrintShippingLabel(order)}
@@ -1280,7 +1322,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         <KanbanView 
           orders={filteredOrders} 
           onStatusChange={updateOrderStatus}
-          onEdit={(order) => { setEditingOrder(order); setShowAddModal(true); }}
+          onEdit={handleEditOrder}
           settings={settings}
         />
       )}
@@ -1470,7 +1512,7 @@ const OrderCard = ({
   const StatusIcon = {
     PhoneForwarded, FileSearch, Package, Truck, CheckCircle, Coins, RefreshCcw, XCircle, Archive
   }[statusInfo.icon as string] || Package;
-  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0));
+  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee + (order.tax || 0) - (order.discount || 0));
 
   return (
     <motion.div 
@@ -1691,7 +1733,7 @@ const OrderRow = ({
   const StatusIcon = {
     PhoneForwarded, FileSearch, Package, Truck, CheckCircle, Coins, RefreshCcw, XCircle, Archive
   }[statusInfo.icon as string] || Package;
-  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0));
+  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee + (order.tax || 0) - (order.discount || 0));
 
   return (
     <tr className={`group transition-all ${isSelected ? 'bg-primary/5' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}`}>
@@ -1716,6 +1758,18 @@ const OrderRow = ({
               </a>
             </div>
             <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{order.customerName}</div>
+            {order.waybillNumber && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <div className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400 rounded-md border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                  <ExternalLink size={10} /> {order.waybillNumber}
+                </div>
+                {order.trackingUrl && (
+                  <a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-md transition-colors" title="تتبع الشحنة">
+                    <LinkIcon size={12} />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </td>
@@ -2125,7 +2179,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                 newItems[index] = {
                     ...newItems[index],
                     variantId: value,
-                    variantDescription: Object.entries(variant.options).map(([k, v]) => `${k}: ${v}`).join(', '),
+                    variantDescription: Object.entries(variant.options || {}).map(([k, v]) => `${k}: ${v}`).join(', '),
                     price: variant.price,
                     cost: variant.costPrice,
                     weight: variant.weight
@@ -2256,6 +2310,26 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
                                <Building size={18} className="text-emerald-500"/> بيانات الشحن والطلب
                            </h4>
+                           
+                           {orderData.waybillNumber && (
+                              <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                 <div>
+                                    <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-1 uppercase tracking-wider">رقم البوليصة (Waybill)</p>
+                                    <p className="text-lg font-black text-blue-800 dark:text-blue-200 tabular-nums">{orderData.waybillNumber}</p>
+                                 </div>
+                                 {orderData.trackingUrl && (
+                                    <a 
+                                      href={orderData.trackingUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-black rounded-xl text-sm shadow-md hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
+                                    >
+                                       <LinkIcon size={16} /> تتبع الشحنة
+                                    </a>
+                                 )}
+                              </div>
+                           )}
+
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <select required value={orderData.shippingCompany} onChange={e => handleFieldChange('shippingCompany', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white">
                                     {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
@@ -2325,7 +2399,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                                                     <option value="">بدون متغيرات</option>
                                                     {product.variants?.map(v => (
                                                         <option key={v.id} value={v.id}>
-                                                            {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ')}
+                                                            {Object.entries(v.options || {}).map(([k, val]) => `${k}: ${val}`).join(', ')}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -2358,16 +2432,33 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                             </h4>
                             
                             <div className="space-y-3 text-slate-600 dark:text-slate-400">
-                                <div className="flex justify-between text-sm items-center">
+                                 <div className="flex justify-between text-sm items-center">
                                     <span>إجمالي المنتجات</span>
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{subtotal.toLocaleString()} ج.م</span>
                                 </div>
-                                <div className="flex justify-between text-sm items-center">
-                                    <div className="flex items-center gap-1">
-                                        <span>مصاريف الشحن</span>
-                                        <span className="text-[10px] text-slate-400 font-medium">(الوزن: {totalWeight.toFixed(2)} كجم)</span>
+                                {orderData.tax && orderData.tax > 0 ? (
+                                    <div className="flex justify-between text-sm items-center">
+                                        <span>الضريبة</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{orderData.tax.toLocaleString()} ج.م</span>
                                     </div>
-                                    <span className="font-bold text-slate-800 dark:text-slate-200">{(orderData.shippingFee || 0).toLocaleString()} ج.م</span>
+                                ) : null}
+                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs text-slate-500 dark:text-slate-400 block font-bold">مصاريف الشحن</label>
+                                        {totalWeight > 0 && (
+                                            <span className="text-[10px] text-slate-400 font-medium">(الوزن: {totalWeight.toFixed(2)} كجم)</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="number" 
+                                            min="0" 
+                                            value={orderData.shippingFee || 0} 
+                                            onChange={e => handleFieldChange('shippingFee', Number(e.target.value))} 
+                                            className="w-full font-bold bg-transparent outline-none text-slate-800 dark:text-slate-200" 
+                                        />
+                                        <span className="text-sm text-slate-400">ج.م</span>
+                                    </div>
                                 </div>
                                 {inspectionFee > 0 && (
                                     <div className="flex justify-between text-sm items-center">
@@ -2486,7 +2577,9 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
                     <div className="flex justify-between items-center text-sm">
                         <div className="flex items-center gap-1">
                             <span className="font-bold text-slate-500">مصاريف الشحن:</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                            {(order.weight || 0) > 0 && (
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                            )}
                         </div>
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
                     </div>
@@ -2572,7 +2665,9 @@ const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ o
                     <div className="flex justify-between items-center text-sm">
                         <div className="flex items-center gap-1">
                             <span className="font-bold text-slate-500">مصاريف الشحن:</span>
-                            <span className="text-[10px] text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                            {(order.weight || 0) > 0 && (
+                                <span className="text-[10px] text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                            )}
                         </div>
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
                     </div>

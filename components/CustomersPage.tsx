@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Order, CustomerProfile } from './types';
+import { Order, CustomerProfile } from '../types';
 import { Search, User, Phone, MapPin, ShoppingBag, TrendingUp, AlertTriangle, Star, ArrowUpRight, ArrowDownRight, LayoutList, X, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 

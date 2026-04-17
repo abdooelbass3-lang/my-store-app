@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LogIn, Building, Phone, KeyRound, Loader2, UserPlus, User as UserIcon, CheckCircle, Mail } from 'lucide-react';
-import { User, StoreData, Employee } from './types';
+import { User, StoreData, Employee } from '../types';
 
 interface EmployeeRegisterRequestData {
   fullName: string;

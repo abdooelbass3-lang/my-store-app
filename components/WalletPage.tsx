@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Wallet as WalletIcon, Plus, Minus, ArrowUpRight, ArrowDownLeft, Trash2, Calendar, Shield, Eye, Truck, TrendingUp, Info, AlertTriangle, Coins, Receipt, X, Layers } from 'lucide-react';
-import { Wallet, Transaction, Order, Settings } from './types';
+import { Wallet, Transaction, Order, Settings } from '../types';
 import { motion, Variants } from 'framer-motion';
 
 const containerVariants = {

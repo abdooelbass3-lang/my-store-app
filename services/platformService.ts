@@ -1,6 +1,6 @@
 
 
-import { Product } from './types';
+import { Product } from '../types';
 
 const WUILT_GRAPHQL_QUERY = `
   query GetProducts {

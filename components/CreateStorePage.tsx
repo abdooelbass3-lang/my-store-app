@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Move, Grid3x3, Palette, LayoutTemplate, MonitorSmartphone } from 'lucide-react';
-import { User, Store } from './types';
+import { User, Store } from '../types';
 
 interface CreateStorePageProps {
   currentUser: User | null;
